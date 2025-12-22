@@ -1,0 +1,68 @@
+[package]
+name = "mvp-node"
+version = "0.1.0"
+edition = "2021"
+description = "MVP Node for decentralized AI network"
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# P2P Networking
+libp2p = { version = "0.53", features = [
+    "gossipsub",
+    "request-response", 
+    "mdns",
+    "tcp",
+    "noise",
+    "yamux",
+    "tokio",
+    "macros",
+    "identify",
+] }
+
+# Async Runtime
+tokio = { version = "1.37", features = ["rt-multi-thread", "macros", "sync", "fs", "time"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error Handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging and Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Async utilities
+futures = "0.3"
+async-trait = "0.1"
+
+# Cryptography
+hex = "0.4"
+
+# CLI
+clap = { version = "4.0", features = ["derive"] }
+
+# Configuration
+config = "0.14"
+toml = "0.8"
+
+# AI/ML (placeholder - will be replaced with actual inference engine)
+# candle-core = "0.3"  # Uncomment when implementing inference
+# candle-nn = "0.3"    # Uncomment when implementing inference
+
+[dev-dependencies]
+# Testing
+tokio-test = "0.4"
+proptest = "1.4"
+mockall = "0.12"
+tempfile = "3.8"
+
+# Test utilities
+serial_test = "3.0"  # For tests that can't run in parallel
+
+[[bin]]
+name = "mvp-node"
+path = "src/main.rs"

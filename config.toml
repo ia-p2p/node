@@ -1,0 +1,23 @@
+[node]
+node_id = "auto"
+listen_port = 0
+log_level = "info"
+
+[network]
+bootstrap_peers = []
+enable_mdns = true
+gossipsub_heartbeat_interval_secs = 1
+
+[model]
+path = "./models/micromodel.gguf"
+max_context_length = 2048
+inference_timeout_secs = 30
+
+[executor]
+max_queue_size = 100
+max_concurrent_jobs = 1
+
+[monitoring]
+enable_metrics = true
+metrics_port = 9090
+log_format = "json"

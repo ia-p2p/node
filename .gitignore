@@ -1,0 +1,26 @@
+# Rust
+/target/
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Models (large files)
+models/
+*.gguf
+*.bin
+
+# Config overrides
+config.local.toml
+node*.toml
+
+# Test artifacts
+/test-output/
