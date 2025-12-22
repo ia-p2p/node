@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WorkOffer",
+  "type": "object",
+  "properties": {
+    "job_id": {"type": "string"},
+    "model": {"type": "string"},
+    "mode": {
+      "type": "string",
+      "enum": ["batch", "session"],
+      "default": "batch"
+    },
+    "reward": {"type": "number"},
+    "currency": {"type": "string"},
+    "requirements": {"type": "object"},
+    "policy_refs": {"type": "array", "items": {"type": "string"}},
+    "session": {
+      "type": "object",
+      "properties": {
+        "session_id": {"type": "string"},
+        "max_tokens_per_window": {"type": "number"},
+        "window_seconds": {"type": "integer"},
+        "max_concurrent_windows": {"type": "integer"},
+        "payment_mode": {
+          "type": "string",
+          "enum": ["stream", "per_window", "postpaid"]
+        },
+        "heartbeat_interval_sec": {"type": "integer"}
+      },
+      "required": ["session_id"],
+      "additionalProperties": true
+    }
+  },
+  "required": ["job_id", "model", "reward", "currency"],
+  "additionalProperties": true
+}

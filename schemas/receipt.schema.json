@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "JobReceipt",
+  "type": "object",
+  "properties": {
+    "receipt_id": {"type": "string"},
+    "job_id": {"type": "string"},
+    "session_id": {"type": "string"},
+    "sequence": {
+      "type": "integer",
+      "description": "Monotonic chunk number for session receipts"
+    },
+    "executor_pubkey": {"type": "string"},
+    "manifest_id": {"type": "string"},
+    "outputs_hash": {"type": "string"},
+    "tokens_processed": {"type": "number"},
+    "energy_kwh_estimate": {"type": "number"},
+    "started_at": {"type": "integer", "description": "Unix timestamp"},
+    "completed_at": {"type": "integer", "description": "Unix timestamp"},
+    "latency_ms": {"type": "number"},
+    "payment_proof": {"type": "string"},
+    "chunk_window_seconds": {"type": "integer"},
+    "signature": {"type": "string"}
+  },
+  "required": [
+    "receipt_id",
+    "job_id",
+    "executor_pubkey",
+    "outputs_hash",
+    "completed_at",
+    "signature"
+  ],
+  "additionalProperties": true
+}

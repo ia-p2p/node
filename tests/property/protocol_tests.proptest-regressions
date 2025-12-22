@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc be99acce69f3acdcaa28cc6b70a4da8da8ee2f1e6ea0b121a79b4a0c3c5ab262 # shrinks to offer = WorkOffer { job_id: "a_-0aAA-", model: "/", mode: Batch, reward: 981.5830497087821, currency: "AAA", requirements: JobRequirements { min_vram_gb: None, min_ram_gb: None, gpu_vendor: None, additional: {} }, policy_refs: [], session: None, additional: {} }
+cc 6bde7e5c4fd36f49c7b85c09ccb9469283e29dbc6bc24c0b9f360185e40a062f # shrinks to offer = WorkOffer { job_id: "A-__00_0", model: "_", mode: Batch, reward: 935.2399254477003, currency: "AAA", requirements: JobRequirements { min_vram_gb: None, min_ram_gb: None, gpu_vendor: None, additional: {} }, policy_refs: [], session: None, additional: {} }

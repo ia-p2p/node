@@ -1,22 +1,12 @@
 //! Protocol types and message definitions
 //! 
-//! This module will contain the protocol message types and validation logic.
-//! To be fully implemented in task 2.
+//! This module implements the protocol message types based on the established schemas
+//! and provides validation and cryptographic utilities.
 
-use serde::{Deserialize, Serialize};
+pub mod messages;
+pub mod validation;
+pub mod crypto;
 
-/// Placeholder for protocol message types
-/// These will be fully implemented in task 2 based on the existing schemas
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProtocolMessage {
-    pub message_type: String,
-    pub payload: serde_json::Value,
-}
-
-// TODO: Implement full protocol types in task 2:
-// - AnnounceMsg
-// - JobOfferMsg  
-// - JobClaimMsg
-// - ReceiptMsg
-// - Schema validation
-// - Cryptographic utilities
+pub use messages::*;
+pub use validation::*;
+pub use crypto::*;

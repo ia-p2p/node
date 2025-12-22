@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecutionManifest",
+  "type": "object",
+  "properties": {
+    "manifest_id": {"type": "string"},
+    "version": {"type": "string"},
+    "issuer_pubkey": {"type": "string"},
+    "issued_at": {"type": "integer", "description": "Unix timestamp"},
+    "description": {"type": "string"},
+    "policies": {
+      "type": "object",
+      "properties": {
+        "latency_ms": {"type": "number"},
+        "redundancy_min": {"type": "integer"},
+        "redundancy_max": {"type": "integer"},
+        "models_allowed": {"type": "array", "items": {"type": "string"}},
+        "geos_allowed": {"type": "array", "items": {"type": "string"}},
+        "max_job_duration_sec": {"type": "integer"},
+        "payment_terms": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "capabilities": {
+      "type": "object",
+      "properties": {
+        "execution_modes": {"type": "array", "items": {"type": "string"}},
+        "min_vram_gb": {"type": "number"},
+        "requires_tee": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    },
+    "contact": {"type": "string"},
+    "signature": {"type": "string"}
+  },
+  "required": ["manifest_id", "version", "issuer_pubkey", "issued_at"],
+  "additionalProperties": true
+}
