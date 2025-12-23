@@ -9,3 +9,4 @@ pub mod integration_tests;
 pub mod monitoring_tests;
 pub mod node_tests;
 pub mod multiinstance_tests;
+pub mod bootstrap_tests;

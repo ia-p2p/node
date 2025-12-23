@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc e4584b6b3e7e8e441dfe32c989db8436e4d5ee960fa2b8699aa78341171af532 # shrinks to config = NodeConfig { node_id: "0", listen_port: 1024, bootstrap_peers: ["127.0.0.1:0000"], model_path: "/tmp/test_model.gguf", max_queue_size: 1, log_level: "trace", data_dir: None, enable_mdns: true, connection_timeout_secs: 30, max_peers: 50 }

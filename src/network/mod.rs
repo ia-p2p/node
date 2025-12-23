@@ -94,6 +94,48 @@ pub struct P2PBehaviour {
     pub identify: identify::Behaviour,
 }
 
+/// Bootstrap node mode for network initialization
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BootstrapMode {
+    /// This node is a bootstrap node (no bootstrap peers provided)
+    Bootstrap,
+    /// This node connects to existing bootstrap peers
+    Client,
+}
+
+impl std::fmt::Display for BootstrapMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BootstrapMode::Bootstrap => write!(f, "Bootstrap"),
+            BootstrapMode::Client => write!(f, "Client"),
+        }
+    }
+}
+
+/// Configuration for peer acceptance and topology management
+#[derive(Debug, Clone)]
+pub struct TopologyConfig {
+    /// Maximum number of peers to accept
+    pub max_peers: usize,
+    /// Enable automatic peer acceptance
+    pub auto_accept_peers: bool,
+    /// Preferred peers to maintain connection with
+    pub preferred_peers: Vec<PeerId>,
+    /// Enable peer rotation for load balancing
+    pub enable_peer_rotation: bool,
+}
+
+impl Default for TopologyConfig {
+    fn default() -> Self {
+        Self {
+            max_peers: 50,
+            auto_accept_peers: true,
+            preferred_peers: Vec::new(),
+            enable_peer_rotation: true,
+        }
+    }
+}
+
 /// P2P Network implementation
 pub struct P2PNetworkLayer {
     swarm: Swarm<P2PBehaviour>,
@@ -102,6 +144,14 @@ pub struct P2PNetworkLayer {
     peers: HashMap<PeerId, PeerInfo>,
     subscribed_topics: Vec<String>,
     is_running: bool,
+    /// Mode of operation (bootstrap or client)
+    bootstrap_mode: BootstrapMode,
+    /// Topology configuration
+    topology_config: TopologyConfig,
+    /// List of known bootstrap peers for network recovery
+    known_bootstrap_peers: Vec<Multiaddr>,
+    /// Timestamp when node started
+    started_at: Option<std::time::Instant>,
 }
 
 /// Information about a connected peer
@@ -179,7 +229,64 @@ impl P2PNetworkLayer {
             peers: HashMap::new(),
             subscribed_topics: Vec::new(),
             is_running: false,
+            bootstrap_mode: BootstrapMode::Client, // Default, updated on start
+            topology_config: TopologyConfig::default(),
+            known_bootstrap_peers: Vec::new(),
+            started_at: None,
         })
+    }
+
+    /// Create a new P2P network layer configured as a bootstrap node
+    pub async fn new_bootstrap(keypair: Keypair, topology_config: TopologyConfig) -> Result<Self> {
+        let mut layer = Self::new(keypair).await?;
+        layer.bootstrap_mode = BootstrapMode::Bootstrap;
+        layer.topology_config = topology_config;
+        Ok(layer)
+    }
+
+    /// Check if this node is operating as a bootstrap node
+    pub fn is_bootstrap_node(&self) -> bool {
+        self.bootstrap_mode == BootstrapMode::Bootstrap
+    }
+
+    /// Get the current bootstrap mode
+    pub fn get_bootstrap_mode(&self) -> BootstrapMode {
+        self.bootstrap_mode
+    }
+
+    /// Get the topology configuration
+    pub fn get_topology_config(&self) -> &TopologyConfig {
+        &self.topology_config
+    }
+
+    /// Set the topology configuration
+    pub fn set_topology_config(&mut self, config: TopologyConfig) {
+        self.topology_config = config;
+    }
+
+    /// Get known bootstrap peers
+    pub fn get_known_bootstrap_peers(&self) -> &[Multiaddr] {
+        &self.known_bootstrap_peers
+    }
+
+    /// Add a known bootstrap peer
+    pub fn add_known_bootstrap_peer(&mut self, addr: Multiaddr) {
+        if !self.known_bootstrap_peers.contains(&addr) {
+            self.known_bootstrap_peers.push(addr);
+        }
+    }
+
+    /// Check if we can accept more peers based on topology configuration
+    pub fn can_accept_peer(&self) -> bool {
+        if !self.topology_config.auto_accept_peers {
+            return false;
+        }
+        self.peers.len() < self.topology_config.max_peers
+    }
+
+    /// Get node uptime if started
+    pub fn get_uptime(&self) -> Option<Duration> {
+        self.started_at.map(|t| t.elapsed())
     }
 
     /// Subscribe to all standard topics
@@ -275,6 +382,13 @@ impl P2PNetworkLayer {
             }
             SwarmEvent::Behaviour(P2PBehaviourEvent::Mdns(mdns::Event::Discovered(peers))) => {
                 for (peer_id, addr) in peers {
+                    // Check if we can accept more peers based on topology configuration
+                    if !self.can_accept_peer() {
+                        debug!("Ignoring discovered peer {} - max peers reached ({}/{})", 
+                               peer_id, self.peers.len(), self.topology_config.max_peers);
+                        continue;
+                    }
+
                     info!("mDNS discovered peer: {} at {}", peer_id, addr);
                     self.swarm
                         .behaviour_mut()
@@ -288,6 +402,11 @@ impl P2PNetworkLayer {
                         protocol_version: None,
                         connected_at: std::time::Instant::now(),
                     });
+
+                    if self.is_bootstrap_node() {
+                        info!("Bootstrap node accepted peer {} ({}/{})", 
+                              peer_id, self.peers.len(), self.topology_config.max_peers);
+                    }
 
                     if let Err(e) = self.event_tx.send(NetworkEvent::PeerDiscovered(peer_id)).await {
                         warn!("Failed to send peer discovered event: {}", e);
@@ -330,8 +449,22 @@ impl P2PNetworkLayer {
             SwarmEvent::NewListenAddr { address, .. } => {
                 info!("Now listening on {}", address);
             }
-            SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                info!("Connection established with peer: {}", peer_id);
+            SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
+                // Check peer limits for incoming connections
+                if endpoint.is_listener() && !self.can_accept_peer() && !self.is_preferred_peer(&peer_id) {
+                    info!("Rejecting connection from {} - max peers reached ({}/{})", 
+                          peer_id, self.peers.len(), self.topology_config.max_peers);
+                    let _ = self.swarm.disconnect_peer_id(peer_id);
+                    return;
+                }
+
+                info!("Connection established with peer: {} ({})", 
+                      peer_id, if endpoint.is_listener() { "incoming" } else { "outgoing" });
+                
+                if self.is_bootstrap_node() && endpoint.is_listener() {
+                    info!("Bootstrap node: accepted incoming connection from {}", peer_id);
+                }
+
                 if let Err(e) = self.event_tx.send(NetworkEvent::ConnectionEstablished(peer_id)).await {
                     warn!("Failed to send connection established event: {}", e);
                 }
@@ -363,6 +496,20 @@ impl P2PNetworkLayer {
 impl NetworkLayer for P2PNetworkLayer {
     async fn start(&mut self, config: NetworkConfig) -> Result<()> {
         info!("Starting P2P network layer with config: {:?}", config);
+
+        // Detect bootstrap mode based on whether bootstrap peers are provided
+        if config.bootstrap_peers.is_empty() {
+            self.bootstrap_mode = BootstrapMode::Bootstrap;
+            info!("No bootstrap peers provided - operating as BOOTSTRAP NODE");
+        } else {
+            self.bootstrap_mode = BootstrapMode::Client;
+            info!("Bootstrap peers provided - operating as CLIENT NODE");
+            // Store known bootstrap peers for network recovery
+            self.known_bootstrap_peers = config.bootstrap_peers.clone();
+        }
+
+        // Record start time
+        self.started_at = Some(std::time::Instant::now());
 
         // Listen on configured address
         self.swarm.listen_on(config.listen_addr.clone())?;
@@ -397,7 +544,14 @@ impl NetworkLayer for P2PNetworkLayer {
             anyhow::bail!("Failed to establish listener within timeout");
         }
 
-        // Connect to bootstrap peers
+        // Bootstrap node specific initialization
+        if self.is_bootstrap_node() {
+            info!("Bootstrap node initialized - ready to accept incoming connections");
+            info!("Max peers configured: {}", self.topology_config.max_peers);
+            info!("Auto-accept peers: {}", self.topology_config.auto_accept_peers);
+        }
+
+        // Connect to bootstrap peers (only for client nodes)
         for addr in &config.bootstrap_peers {
             info!("Dialing bootstrap peer: {}", addr);
             if let Err(e) = self.swarm.dial(addr.clone()) {
@@ -408,7 +562,7 @@ impl NetworkLayer for P2PNetworkLayer {
         // Subscribe to all standard topics
         self.subscribe_all_topics()?;
 
-        info!("P2P network layer started successfully");
+        info!("P2P network layer started successfully in {} mode", self.bootstrap_mode);
         Ok(())
     }
 
@@ -451,10 +605,101 @@ impl NetworkLayer for P2PNetworkLayer {
         // Clear peer list
         self.peers.clear();
         self.subscribed_topics.clear();
+        self.started_at = None;
 
         info!("P2P network layer shutdown complete");
         Ok(())
     }
+}
+
+/// Bootstrap node status information
+#[derive(Debug, Clone)]
+pub struct BootstrapNodeStatus {
+    /// Whether this node is operating as a bootstrap node
+    pub is_bootstrap: bool,
+    /// Bootstrap mode
+    pub mode: BootstrapMode,
+    /// Current peer count
+    pub peer_count: usize,
+    /// Maximum allowed peers
+    pub max_peers: usize,
+    /// Whether auto-accept is enabled
+    pub auto_accept_peers: bool,
+    /// Node uptime in seconds
+    pub uptime_secs: u64,
+    /// Listening addresses
+    pub listen_addresses: Vec<String>,
+    /// Number of known bootstrap peers (for client nodes)
+    pub known_bootstrap_peers_count: usize,
+}
+
+impl P2PNetworkLayer {
+    /// Get bootstrap node status for monitoring
+    pub fn get_bootstrap_status(&self) -> BootstrapNodeStatus {
+        BootstrapNodeStatus {
+            is_bootstrap: self.is_bootstrap_node(),
+            mode: self.bootstrap_mode,
+            peer_count: self.peers.len(),
+            max_peers: self.topology_config.max_peers,
+            auto_accept_peers: self.topology_config.auto_accept_peers,
+            uptime_secs: self.get_uptime().map(|d| d.as_secs()).unwrap_or(0),
+            listen_addresses: self.get_listeners().iter().map(|a| a.to_string()).collect(),
+            known_bootstrap_peers_count: self.known_bootstrap_peers.len(),
+        }
+    }
+
+    /// Dial a specific peer address
+    pub fn dial_peer(&mut self, addr: &Multiaddr) -> Result<()> {
+        self.swarm.dial(addr.clone())?;
+        info!("Dialing peer at {}", addr);
+        Ok(())
+    }
+
+    /// Disconnect from a specific peer
+    pub fn disconnect_peer(&mut self, peer_id: &PeerId) -> Result<()> {
+        let _ = self.swarm.disconnect_peer_id(*peer_id);
+        self.peers.remove(peer_id);
+        info!("Disconnected from peer {}", peer_id);
+        Ok(())
+    }
+
+    /// Add a peer to the preferred peers list for priority connections
+    pub fn add_preferred_peer(&mut self, peer_id: PeerId) {
+        if !self.topology_config.preferred_peers.contains(&peer_id) {
+            self.topology_config.preferred_peers.push(peer_id);
+            info!("Added {} to preferred peers", peer_id);
+        }
+    }
+
+    /// Remove a peer from the preferred peers list
+    pub fn remove_preferred_peer(&mut self, peer_id: &PeerId) {
+        self.topology_config.preferred_peers.retain(|p| p != peer_id);
+        info!("Removed {} from preferred peers", peer_id);
+    }
+
+    /// Check if a peer is in the preferred list
+    pub fn is_preferred_peer(&self, peer_id: &PeerId) -> bool {
+        self.topology_config.preferred_peers.contains(peer_id)
+    }
+
+    /// Get network statistics for the bootstrap node
+    pub fn get_network_stats(&self) -> NetworkStats {
+        NetworkStats {
+            connected_peers: self.peers.len(),
+            subscribed_topics: self.subscribed_topics.len(),
+            is_bootstrap: self.is_bootstrap_node(),
+            uptime: self.get_uptime(),
+        }
+    }
+}
+
+/// Network statistics
+#[derive(Debug, Clone)]
+pub struct NetworkStats {
+    pub connected_peers: usize,
+    pub subscribed_topics: usize,
+    pub is_bootstrap: bool,
+    pub uptime: Option<Duration>,
 }
 
 /// Load or generate Ed25519 keypair from file

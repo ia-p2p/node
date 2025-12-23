@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 1137d6bf61ae1bbe6a0c658963d9f7b5c279c6658aa7769b45ff1ba5e42347b4 # shrinks to model_path = "mixtral-8x7b"
