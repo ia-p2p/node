@@ -318,6 +318,7 @@ mod tests {
             model_path: "tinyllama-1.1b".to_string(),
             max_queue_size: 10,
             log_level: "debug".to_string(),
+            ..Default::default()
         }
     }
 

@@ -19,8 +19,8 @@ mod config_property_tests {
         (
             "[a-zA-Z0-9_-]{1,20}",  // node_id
             1024u16..65535u16,       // listen_port (valid port range)
-            prop::collection::vec("(127\\.0\\.0\\.1|localhost):[0-9]{4,5}", 0..5), // bootstrap_peers
-            "/tmp/test_model\\.gguf", // model_path (we'll create this file)
+            prop::collection::vec("/ip4/127\\.0\\.0\\.1/tcp/[0-9]{4,5}", 0..3), // bootstrap_peers (multiaddr format)
+            "tinyllama-1\\.1b", // model_path (model name)
             1usize..1000usize,       // max_queue_size
             "(trace|debug|info|warn|error)", // log_level
         ).prop_map(|(node_id, listen_port, bootstrap_peers, model_path, max_queue_size, log_level)| {
@@ -31,6 +31,7 @@ mod config_property_tests {
                 model_path,
                 max_queue_size,
                 log_level,
+                ..Default::default()
             }
         })
     }
@@ -113,18 +114,20 @@ mod config_property_tests {
     }
 
     #[test]
-    fn test_nonexistent_model_path_fails_validation() {
+    fn test_invalid_config_fails_validation() {
+        // Test with empty node_id
         let config = NodeConfig {
-            node_id: "test".to_string(),
+            node_id: "".to_string(),
             listen_port: 8080,
             bootstrap_peers: vec![],
-            model_path: "/nonexistent/path/model.gguf".to_string(),
+            model_path: "model.gguf".to_string(),
             max_queue_size: 100,
             log_level: "info".to_string(),
+            ..Default::default()
         };
         
         let result = DefaultConfigManager::validate_config(&config);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Model path does not exist"));
+        assert!(result.unwrap_err().to_string().contains("node_id"));
     }
 }
