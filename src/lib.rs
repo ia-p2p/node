@@ -12,6 +12,7 @@ use std::collections::HashMap;
 // Re-export modules
 pub mod config;
 pub mod protocol;
+pub mod network;
 
 // Core data types
 pub use config::NodeConfig;
@@ -134,7 +135,7 @@ pub struct GpuInfo {
 
 /// Network layer interface for P2P communication
 #[async_trait]
-pub trait NetworkLayer: Send + Sync {
+pub trait NetworkLayer: Send {
     /// Start the network layer with given configuration
     async fn start(&mut self, config: NetworkConfig) -> Result<()>;
     
