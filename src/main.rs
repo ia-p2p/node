@@ -6,7 +6,6 @@ use mvp_node::ConfigManager;
 use mvp_node::config::DefaultConfigManager;
 
 mod node;
-mod monitoring;
 
 #[derive(Parser)]
 #[command(name = "mvp-node")]
