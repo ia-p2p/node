@@ -139,9 +139,29 @@ impl DefaultJobExecutor {
         }
     }
 
-    /// Set the inference engine (will be used in Task 6)
+    /// Create a new job executor with an inference engine
+    pub fn with_inference_engine(
+        max_queue_size: usize,
+        engine: Arc<Mutex<dyn InferenceEngine>>,
+    ) -> Self {
+        Self {
+            queue: Arc::new(Mutex::new(JobQueue::new(max_queue_size))),
+            processing_job: Arc::new(RwLock::new(None)),
+            completed_jobs: Arc::new(RwLock::new(0)),
+            failed_jobs: Arc::new(RwLock::new(0)),
+            max_queue_size,
+            inference_engine: Some(engine),
+        }
+    }
+
+    /// Set the inference engine
     pub fn set_inference_engine(&mut self, engine: Arc<Mutex<dyn InferenceEngine>>) {
         self.inference_engine = Some(engine);
+    }
+
+    /// Check if an inference engine is configured
+    pub fn has_inference_engine(&self) -> bool {
+        self.inference_engine.is_some()
     }
 
     /// Validate job offer
@@ -164,26 +184,104 @@ impl DefaultJobExecutor {
         Ok(())
     }
 
-    /// Process a single job (stub implementation for now)
+    /// Validate job input against model requirements
+    async fn validate_input_against_model(&self, job: &JobOffer) -> Result<()> {
+        if let Some(ref engine) = self.inference_engine {
+            let engine_guard = engine.lock().await;
+            
+            // Check if model is loaded
+            if !engine_guard.is_model_loaded() {
+                return Err(anyhow!("No model loaded for inference"));
+            }
+
+            // Validate input against model requirements
+            engine_guard.validate_input(&job.input_data)?;
+
+            // Check model compatibility if specified
+            if let Some(ref model_info) = engine_guard.get_model_info() {
+                // Verify the job's model requirement matches loaded model
+                if !job.model.is_empty() && !model_info.name.to_lowercase().contains(&job.model.to_lowercase()) {
+                    warn!(
+                        "Job requests model '{}' but '{}' is loaded",
+                        job.model, model_info.name
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Process a single job using the inference engine
     async fn execute_job(&self, job: &JobOffer) -> JobResult {
         let start_time = std::time::Instant::now();
         
-        info!("Processing job: {}", job.job_id);
+        info!("Processing job: {} with model: {}", job.job_id, job.model);
         
-        // For now, return a placeholder result
-        // In Task 6, this will integrate with the inference engine
+        // Validate input against model requirements (Property 7: Requirement 2.2)
+        if let Err(e) = self.validate_input_against_model(job).await {
+            warn!("Input validation failed for job {}: {}", job.job_id, e);
+            return self.create_error_result(job, &e.to_string(), start_time);
+        }
+
+        // Execute inference using the inference engine (Property 8: Requirement 2.3)
+        if let Some(ref engine) = self.inference_engine {
+            let engine_guard = engine.lock().await;
+            
+            match engine_guard.infer(&job.input_data).await {
+                Ok(inference_result) => {
+                    let duration = start_time.elapsed().as_millis() as u64;
+                    
+                    // Return result with execution metadata (Property 9: Requirement 2.4)
+                    JobResult {
+                        job_id: job.job_id.clone(),
+                        status: JobStatus::Completed,
+                        output: Some(inference_result.output),
+                        metrics: ExecutionMetrics {
+                            duration_ms: duration,
+                            tokens_processed: Some(inference_result.tokens_processed),
+                            peak_memory_mb: Some(inference_result.memory_used_mb),
+                        },
+                        error: None,
+                    }
+                }
+                Err(e) => {
+                    // Return error response with failure details (Property 10: Requirement 2.5)
+                    warn!("Inference failed for job {}: {}", job.job_id, e);
+                    self.create_error_result(job, &e.to_string(), start_time)
+                }
+            }
+        } else {
+            // No inference engine configured - use placeholder (for testing)
+            let duration = start_time.elapsed().as_millis() as u64;
+            
+            JobResult {
+                job_id: job.job_id.clone(),
+                status: JobStatus::Completed,
+                output: Some(format!("Placeholder result for job {} (no inference engine)", job.job_id)),
+                metrics: ExecutionMetrics {
+                    duration_ms: duration,
+                    tokens_processed: Some(job.input_data.len() as u64 / 4),
+                    peak_memory_mb: Some(100),
+                },
+                error: None,
+            }
+        }
+    }
+
+    /// Create an error result with failure details
+    fn create_error_result(&self, job: &JobOffer, error_msg: &str, start_time: std::time::Instant) -> JobResult {
         let duration = start_time.elapsed().as_millis() as u64;
         
         JobResult {
             job_id: job.job_id.clone(),
-            status: JobStatus::Completed,
-            output: Some(format!("Placeholder result for job {}", job.job_id)),
+            status: JobStatus::Failed,
+            output: None,
             metrics: ExecutionMetrics {
                 duration_ms: duration,
-                tokens_processed: Some(100),
-                peak_memory_mb: Some(512),
+                tokens_processed: Some(0),
+                peak_memory_mb: Some(0),
             },
-            error: None,
+            error: Some(error_msg.to_string()),
         }
     }
 }
