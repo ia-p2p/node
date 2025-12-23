@@ -13,6 +13,7 @@ use std::collections::HashMap;
 pub mod config;
 pub mod protocol;
 pub mod network;
+pub mod executor;
 
 // Core data types
 pub use config::NodeConfig;
@@ -90,7 +91,7 @@ pub struct JobResult {
 }
 
 /// Job execution status
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum JobStatus {
     Completed,

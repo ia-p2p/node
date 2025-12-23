@@ -6,10 +6,6 @@ use mvp_node::ConfigManager;
 use mvp_node::config::DefaultConfigManager;
 
 mod node;
-mod network;
-mod executor;
-mod inference;
-mod protocol;
 mod monitoring;
 
 #[derive(Parser)]

@@ -3,3 +3,4 @@
 pub mod config_tests;
 pub mod protocol_tests;
 pub mod network_tests;
+pub mod executor_tests;
