@@ -52,9 +52,12 @@ clap = { version = "4.0", features = ["derive"] }
 config = "0.14"
 toml = "0.8"
 
-# AI/ML (placeholder - will be replaced with actual inference engine)
-# candle-core = "0.3"  # Uncomment when implementing inference
-# candle-nn = "0.3"    # Uncomment when implementing inference
+# AI/ML - Candle Framework (HuggingFace)
+candle-core = "0.8"
+candle-nn = "0.8"
+candle-transformers = "0.8"
+hf-hub = "0.3"           # Download de modelos do HuggingFace
+tokenizers = "0.20"      # Tokenização
 
 [dev-dependencies]
 # Testing

@@ -14,6 +14,7 @@ pub mod config;
 pub mod protocol;
 pub mod network;
 pub mod executor;
+pub mod inference;
 
 // Core data types
 pub use config::NodeConfig;
@@ -41,6 +42,9 @@ pub struct ModelInfo {
     pub parameters: u64,
     pub memory_usage_mb: u64,
     pub supported_tasks: Vec<String>,
+    pub max_context_length: usize,
+    pub quantization: Option<String>,
+    pub model_type: String,
 }
 
 /// Result of inference execution
