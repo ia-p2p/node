@@ -52,6 +52,9 @@ clap = { version = "4.0", features = ["derive", "env"] }
 config = "0.14"
 toml = "0.8"
 
+# System info
+num_cpus = "1.16"
+
 # AI/ML - Candle Framework (HuggingFace)
 candle-core = "0.8"
 candle-nn = "0.8"

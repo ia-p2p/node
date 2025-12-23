@@ -10,3 +10,4 @@ pub mod monitoring_tests;
 pub mod node_tests;
 pub mod multiinstance_tests;
 pub mod bootstrap_tests;
+pub mod resources_tests;
