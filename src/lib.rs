@@ -15,6 +15,7 @@ pub mod protocol;
 pub mod network;
 pub mod executor;
 pub mod inference;
+pub mod monitoring;
 
 // Core data types
 pub use config::NodeConfig;
