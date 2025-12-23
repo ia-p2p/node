@@ -17,6 +17,7 @@ pub mod executor;
 pub mod inference;
 pub mod monitoring;
 pub mod resources;
+pub mod error;
 
 // Core data types
 pub use config::NodeConfig;

@@ -55,6 +55,9 @@ toml = "0.8"
 # System info
 num_cpus = "1.16"
 
+# Time/Date
+chrono = { version = "0.4", features = ["serde"] }
+
 # AI/ML - Candle Framework (HuggingFace)
 candle-core = "0.8"
 candle-nn = "0.8"
