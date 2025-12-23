@@ -21,7 +21,7 @@ libp2p = { version = "0.53", features = [
 ] }
 
 # Async Runtime
-tokio = { version = "1.37", features = ["rt-multi-thread", "macros", "sync", "fs", "time"] }
+tokio = { version = "1.37", features = ["rt-multi-thread", "macros", "sync", "fs", "time", "signal"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -46,7 +46,7 @@ sha2 = "0.10"
 rand = "0.8"
 
 # CLI
-clap = { version = "4.0", features = ["derive"] }
+clap = { version = "4.0", features = ["derive", "env"] }
 
 # Configuration
 config = "0.14"
