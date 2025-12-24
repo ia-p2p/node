@@ -7,3 +7,4 @@
 //! - Property 40: Independent state management
 
 mod multi_node;
+mod e2e_tests;
