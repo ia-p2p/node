@@ -12,3 +12,4 @@ pub mod multiinstance_tests;
 pub mod bootstrap_tests;
 pub mod resources_tests;
 pub mod error_tests;
+pub mod protocol_version_tests;

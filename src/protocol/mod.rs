@@ -6,7 +6,9 @@
 pub mod messages;
 pub mod validation;
 pub mod crypto;
+pub mod version;
 
 pub use messages::*;
 pub use validation::*;
 pub use crypto::*;
+pub use version::*;
