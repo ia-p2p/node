@@ -1,0 +1,79 @@
+# High-Performance Node Configuration
+# This configuration is optimized for nodes with significant resources.
+
+[node]
+# Unique identifier for this node
+node_id = "high-perf-1"
+
+# Fixed port for high-availability
+listen_port = 4001
+
+# Path to store node keypair
+keypair_path = "./keys/high-perf-1.json"
+
+[network]
+# Connect to multiple bootstrap peers for redundancy
+bootstrap_peers = [
+    "/ip4/192.168.1.100/tcp/4001",
+    "/ip4/192.168.1.101/tcp/4001",
+    "/ip4/192.168.1.102/tcp/4001"
+]
+
+# High peer count for large networks
+max_peers = 200
+
+# Accept all incoming connections
+auto_accept_peers = true
+
+# Enable mDNS for local discovery
+enable_mdns = true
+
+[model]
+# Path to larger model for better quality
+path = "./models/llama-7b.gguf"
+
+# Larger context for complex tasks
+max_context_length = 4096
+
+[executor]
+# Large queue for high throughput
+max_queue_size = 500
+
+# Longer timeout for complex jobs
+job_timeout_secs = 600
+
+# Enable fair scheduling
+enable_fair_scheduling = true
+
+# Memory threshold for load shedding (MB)
+memory_threshold_mb = 16384
+
+# CPU threshold for throttling (percentage)
+cpu_threshold_percent = 85
+
+[resources]
+# Enable load management
+enable_load_management = true
+
+# Memory high watermark (%)
+memory_high_watermark = 85
+
+# Memory low watermark (%)
+memory_low_watermark = 70
+
+# Enable job aging to prevent starvation
+enable_job_aging = true
+
+# Maximum jobs per submitter
+max_jobs_per_submitter = 50
+
+[monitoring]
+# Debug level for detailed analysis
+log_level = "debug"
+
+# Enable all metrics
+metrics_enabled = true
+
+# JSON logging for log aggregation
+json_logging = true
+

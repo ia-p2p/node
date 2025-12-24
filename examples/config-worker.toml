@@ -1,0 +1,56 @@
+# Worker Node Configuration
+# This configuration is for nodes that connect to the network via bootstrap peers.
+
+[node]
+# Unique identifier for this node
+node_id = "worker-1"
+
+# Port to listen on (0 = auto-assign, recommended for workers)
+listen_port = 0
+
+# Path to store node keypair (optional)
+keypair_path = "./keys/worker-1.json"
+
+[network]
+# Bootstrap peers to connect to (required for workers)
+bootstrap_peers = [
+    "/ip4/192.168.1.100/tcp/4001",
+    "/ip4/192.168.1.101/tcp/4001"
+]
+
+# Maximum number of connected peers
+max_peers = 50
+
+# Accept incoming peer connections
+auto_accept_peers = true
+
+# Enable mDNS for local network discovery
+enable_mdns = true
+
+[model]
+# Path to the micromodel file
+path = "./models/tinyllama.gguf"
+
+# Maximum context length for inference
+max_context_length = 2048
+
+[executor]
+# Maximum jobs in queue
+max_queue_size = 50
+
+# Job timeout in seconds
+job_timeout_secs = 180
+
+# Enable fair scheduling with aging
+enable_fair_scheduling = true
+
+[monitoring]
+# Log level: trace, debug, info, warn, error
+log_level = "info"
+
+# Enable metrics collection
+metrics_enabled = true
+
+# Enable structured JSON logging
+json_logging = false
+

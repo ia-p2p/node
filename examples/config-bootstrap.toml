@@ -1,0 +1,54 @@
+# Bootstrap Node Configuration
+# This configuration is for nodes that act as network entry points.
+# Bootstrap nodes don't need to specify bootstrap_peers.
+
+[node]
+# Unique identifier for this node
+node_id = "bootstrap-1"
+
+# Port to listen on (0 = auto-assign)
+listen_port = 4001
+
+# Path to store node keypair (optional)
+keypair_path = "./keys/bootstrap-1.json"
+
+[network]
+# Empty for bootstrap nodes - no peers to connect to initially
+bootstrap_peers = []
+
+# Maximum number of connected peers
+max_peers = 100
+
+# Accept incoming peer connections automatically
+auto_accept_peers = true
+
+# Enable mDNS for local network discovery
+enable_mdns = true
+
+[model]
+# Path to the micromodel file
+path = "./models/tinyllama.gguf"
+
+# Maximum context length for inference
+max_context_length = 2048
+
+[executor]
+# Maximum jobs in queue before rejecting new ones
+max_queue_size = 100
+
+# Job timeout in seconds
+job_timeout_secs = 300
+
+# Enable fair scheduling with aging
+enable_fair_scheduling = true
+
+[monitoring]
+# Log level: trace, debug, info, warn, error
+log_level = "info"
+
+# Enable metrics collection
+metrics_enabled = true
+
+# Enable structured JSON logging
+json_logging = false
+

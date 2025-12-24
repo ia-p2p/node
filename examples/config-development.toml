@@ -1,0 +1,67 @@
+# Development Configuration
+# This configuration is optimized for local development and testing.
+
+[node]
+# Use a development-friendly node ID
+node_id = "dev-node"
+
+# Auto-assign port to avoid conflicts
+listen_port = 0
+
+# Store keypair in dev directory
+keypair_path = "./dev-keys/dev-node.json"
+
+[network]
+# No bootstrap peers - run as standalone or specify local ones
+# bootstrap_peers = ["/ip4/127.0.0.1/tcp/4001"]
+bootstrap_peers = []
+
+# Moderate peer limit for testing
+max_peers = 20
+
+# Accept connections for easy testing
+auto_accept_peers = true
+
+# Enable mDNS for local network discovery
+enable_mdns = true
+
+[model]
+# Use a small model for fast loading
+path = "./models/tinyllama.gguf"
+
+# Smaller context for faster testing
+max_context_length = 1024
+
+[executor]
+# Small queue for quick tests
+max_queue_size = 20
+
+# Short timeout for quick iteration
+job_timeout_secs = 60
+
+# Enable fair scheduling
+enable_fair_scheduling = true
+
+[resources]
+# Enable load management
+enable_load_management = true
+
+# Lower thresholds for testing
+memory_high_watermark = 70
+memory_low_watermark = 50
+
+# Enable all features for testing
+enable_job_aging = true
+enable_starvation_detection = true
+max_jobs_per_submitter = 5
+
+[monitoring]
+# Verbose logging for development
+log_level = "debug"
+
+# Enable all metrics
+metrics_enabled = true
+
+# Readable logs for development
+json_logging = false
+
