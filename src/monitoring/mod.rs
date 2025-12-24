@@ -3,6 +3,10 @@
 //! This module provides structured logging, metrics collection, and health monitoring
 //! for the MVP Node according to Requirements 5.1-5.5.
 
+pub mod metrics;
+
+pub use metrics::*;
+
 // Note: HealthMonitor trait is defined in lib.rs and imported here
 // We implement it for DefaultHealthMonitor
 use serde::{Deserialize, Serialize};

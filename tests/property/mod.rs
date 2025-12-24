@@ -13,3 +13,4 @@ pub mod bootstrap_tests;
 pub mod resources_tests;
 pub mod error_tests;
 pub mod protocol_version_tests;
+pub mod status_metrics_tests;
