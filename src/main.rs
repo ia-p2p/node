@@ -137,6 +137,49 @@ enum Commands {
     
     /// Show node information
     Info,
+    
+    /// LLM Orchestrator commands
+    Orchestrator {
+        #[command(subcommand)]
+        command: OrchestratorCommands,
+    },
+}
+
+#[derive(Subcommand, Clone)]
+enum OrchestratorCommands {
+    /// Request a decision from the orchestrator
+    Decision {
+        /// Context for the decision
+        #[arg(short, long)]
+        context: String,
+        
+        /// Decision type (infrastructure, context, mediation)
+        #[arg(short = 't', long, default_value = "infrastructure")]
+        decision_type: String,
+    },
+    
+    /// Show orchestrator metrics
+    Metrics,
+    
+    /// Interpret a natural language command
+    Ask {
+        /// Natural language input
+        query: String,
+    },
+    
+    /// Export training data
+    ExportData {
+        /// Output file path
+        #[arg(short, long, default_value = "./training_data.jsonl")]
+        output: String,
+        
+        /// Format (jsonl, json)
+        #[arg(short, long, default_value = "jsonl")]
+        format: String,
+    },
+    
+    /// Show orchestrator status
+    Status,
 }
 
 /// Load configuration with environment variable overrides
@@ -236,6 +279,171 @@ fn show_info() {
     println!("  MVP_NODE_NODE_ID    - Node identifier");
     println!("  MVP_NODE_DATA_DIR   - Data directory");
     println!("  MVP_NODE_MAX_PEERS  - Maximum peers");
+    println!();
+    println!("LLM Orchestrator Commands:");
+    println!("  mvp-node orchestrator decision --context \"...\" - Request decision");
+    println!("  mvp-node orchestrator ask \"...\"                - Natural language query");
+    println!("  mvp-node orchestrator metrics                   - Show metrics");
+    println!("  mvp-node orchestrator export-data               - Export training data");
+    println!("  mvp-node orchestrator status                    - Show status");
+}
+
+/// Parse decision type from string
+fn parse_decision_type(s: &str) -> mvp_node::orchestration::DecisionType {
+    match s.to_lowercase().as_str() {
+        "context" => mvp_node::orchestration::DecisionType::Context,
+        "mediation" => mvp_node::orchestration::DecisionType::Mediation,
+        _ => mvp_node::orchestration::DecisionType::Infrastructure,
+    }
+}
+
+/// Parse dataset format from string
+fn parse_dataset_format(s: &str) -> mvp_node::orchestration::DatasetFormat {
+    match s.to_lowercase().as_str() {
+        "json" => mvp_node::orchestration::DatasetFormat::Json,
+        "csv" => mvp_node::orchestration::DatasetFormat::Csv,
+        _ => mvp_node::orchestration::DatasetFormat::Jsonl,
+    }
+}
+
+/// Handle orchestrator commands
+async fn handle_orchestrator_command(
+    command: OrchestratorCommands,
+    config: NodeConfig,
+) -> anyhow::Result<()> {
+    // Create orchestrator directly for quick commands
+    use mvp_node::monitoring::DefaultHealthMonitor;
+    use mvp_node::orchestration::{LLMOrchestrator, OrchestratorConfig, Orchestrator};
+    use std::sync::Arc;
+    
+    let orch_config = OrchestratorConfig::default();
+    let monitor = Arc::new(DefaultHealthMonitor::new());
+    let orchestrator = LLMOrchestrator::new(
+        orch_config,
+        monitor,
+        config.node_id.clone(),
+        config.max_queue_size,
+    );
+    
+    match command {
+        OrchestratorCommands::Decision { context, decision_type } => {
+            println!("🤖 Requesting orchestration decision...");
+            println!("   Context: {}", context);
+            println!("   Type: {}", decision_type);
+            println!();
+            
+            let dt = parse_decision_type(&decision_type);
+            match orchestrator.make_decision(&context, dt).await {
+                Ok(decision) => {
+                    println!("✅ Decision: {}", decision.decision);
+                    println!("   Confidence: {:.1}%", decision.confidence * 100.0);
+                    println!("   Reasoning: {}", decision.reasoning);
+                    println!();
+                    if !decision.actions.is_empty() {
+                        println!("   Actions:");
+                        for action in &decision.actions {
+                            println!("     - {} (priority: {})", action.action_type, action.priority);
+                        }
+                    }
+                    if let Some(impact) = &decision.estimated_impact {
+                        println!("   Impact: {}", impact);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("❌ Error: {}", e);
+                }
+            }
+        }
+        
+        OrchestratorCommands::Metrics => {
+            let metrics = orchestrator.get_metrics();
+            println!("📊 LLM Orchestrator Metrics");
+            println!();
+            println!("  Decisions Made: {}", metrics.decisions_made);
+            println!("  Success Rate: {:.1}%", metrics.decision_success_rate() * 100.0);
+            println!("  Validation Success: {:.1}%", metrics.validation_success_rate() * 100.0);
+            println!("  Avg Inference Latency: {:.1}ms", metrics.avg_inference_latency_ms);
+            println!("  Cache Hit Rate: {:.1}%", metrics.cache_hit_rate() * 100.0);
+            println!("  Fallback Activations: {}", metrics.fallback_activations);
+            println!("  Training Examples: {}", metrics.training_examples_collected);
+        }
+        
+        OrchestratorCommands::Ask { query } => {
+            println!("🤖 Interpreting: \"{}\"", query);
+            println!();
+            
+            match orchestrator.interpret_natural_language(&query).await {
+                Ok(result) => {
+                    println!("✅ Intent: {}", result.intent);
+                    println!("   Confidence: {:.1}%", result.confidence * 100.0);
+                    println!();
+                    
+                    if result.requires_confirmation {
+                        println!("⚠️  This action requires confirmation");
+                        println!();
+                    }
+                    
+                    println!("   Commands to execute:");
+                    for cmd in &result.commands {
+                        let destructive = if cmd.is_destructive { " ⚠️" } else { "" };
+                        println!("     - {} {:?}{}", cmd.command, cmd.args, destructive);
+                        println!("       {}", cmd.description);
+                    }
+                    
+                    println!();
+                    println!("   Explanation: {}", result.explanation);
+                }
+                Err(e) => {
+                    eprintln!("❌ Error: {}", e);
+                }
+            }
+        }
+        
+        OrchestratorCommands::ExportData { output, format } => {
+            println!("📤 Exporting training data to: {}", output);
+            
+            let fmt = parse_dataset_format(&format);
+            match orchestrator.export_training_data(&output, fmt).await {
+                Ok(count) => {
+                    println!("✅ Exported {} training examples", count);
+                }
+                Err(e) => {
+                    eprintln!("❌ Error: {}", e);
+                }
+            }
+        }
+        
+        OrchestratorCommands::Status => {
+            println!("🔧 LLM Orchestrator Status");
+            println!();
+            println!("  Enabled: {}", orchestrator.is_enabled());
+            println!("  Model Loaded: {}", orchestrator.is_model_loaded().await);
+            
+            match orchestrator.get_current_state().await {
+                Ok(state) => {
+                    println!();
+                    println!("  Current System State:");
+                    println!("    Node: {} (capacity: {})", state.node.id, state.node.capacity);
+                    println!("    Health: {}", state.context.health);
+                    println!("    Queue: {}/{}", state.context.queue_size, state.context.max_queue);
+                    println!("    Partition Risk: {}", state.network.partition_risk);
+                    println!("    Model: {}", if state.model.loaded { "loaded" } else { "not loaded" });
+                }
+                Err(e) => {
+                    eprintln!("    State unavailable: {}", e);
+                }
+            }
+            
+            let metrics = orchestrator.get_metrics();
+            println!();
+            println!("  Metrics Summary:");
+            println!("    Decisions: {}", metrics.decisions_made);
+            println!("    Cache Hits: {}", metrics.cache_hits);
+            println!("    Training Examples: {}", metrics.training_examples_collected);
+        }
+    }
+    
+    Ok(())
 }
 
 /// Run the node with the given configuration
@@ -292,6 +500,16 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Info) => {
             show_info();
             return Ok(());
+        }
+        Some(Commands::Orchestrator { command }) => {
+            // Initialize minimal logging for orchestrator commands
+            init_logging(&cli.log_level);
+            
+            // Load configuration
+            let config = load_config_with_env(&cli)?;
+            
+            // Handle orchestrator command
+            return handle_orchestrator_command(command.clone(), config).await;
         }
         Some(Commands::Start) | None => {
             // Continue to start the node

@@ -21,7 +21,7 @@ libp2p = { version = "0.53", features = [
 ] }
 
 # Async Runtime
-tokio = { version = "1.37", features = ["rt-multi-thread", "macros", "sync", "fs", "time", "signal"] }
+tokio = { version = "1.37", features = ["rt-multi-thread", "macros", "sync", "fs", "time", "signal", "io-util"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -58,6 +58,9 @@ num_cpus = "1.16"
 # Time/Date
 chrono = { version = "0.4", features = ["serde"] }
 
+# UUID generation
+uuid = { version = "1.10", features = ["v4", "serde"] }
+
 # AI/ML - Candle Framework (HuggingFace)
 candle-core = "0.8"
 candle-nn = "0.8"
@@ -78,3 +81,7 @@ serial_test = "3.0"  # For tests that can't run in parallel
 [[bin]]
 name = "mvp-node"
 path = "src/main.rs"
+
+[[example]]
+name = "submit_job"
+path = "examples/submit_job.rs"

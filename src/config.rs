@@ -3,13 +3,20 @@
 //! This module provides configuration loading, validation, and management
 //! for multi-instance support.
 //!
-//! Implements Requirements 8.1, 8.2, 8.3, 8.4, 8.5
+//! Implements Requirements 8.1, 8.2, 8.3, 8.4, 8.5, 10.1
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::net::TcpListener;
 use anyhow::{Result, anyhow};
 use crate::{ConfigManager, NodeIdentity};
+use crate::orchestration::{
+    OrchestratorConfig as OrchestratorConfigInternal,
+    GenerationConfig as GenerationConfigInternal,
+    CacheConfig as CacheConfigInternal,
+    TrainingConfig as TrainingConfigInternal,
+    SafetyConfig as SafetyConfigInternal,
+};
 use libp2p::{identity::Keypair, PeerId};
 use std::sync::atomic::{AtomicU16, Ordering};
 
@@ -58,6 +65,349 @@ pub struct NodeConfig {
     /// Maximum number of peers
     #[serde(default = "default_max_peers")]
     pub max_peers: usize,
+    
+    /// LLM Orchestrator configuration (optional)
+    #[serde(default)]
+    pub orchestrator: Option<OrchestratorFileConfig>,
+    
+    /// Distributed Orchestration configuration (optional)
+    #[serde(default)]
+    pub distributed_orchestration: Option<DistributedOrchestrationFileConfig>,
+}
+
+/// Orchestrator configuration as read from TOML file
+/// This maps to the internal OrchestratorConfig
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OrchestratorFileConfig {
+    /// Whether the orchestrator is enabled
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    
+    /// Path to the model files
+    #[serde(default = "default_model_path")]
+    pub model_path: String,
+    
+    /// Type of model to use
+    #[serde(default = "default_model_type")]
+    pub model_type: String,
+    
+    /// Device to use for inference
+    #[serde(default = "default_device")]
+    pub device: String,
+    
+    /// Generation parameters
+    #[serde(default)]
+    pub generation: GenerationFileConfig,
+    
+    /// Cache configuration
+    #[serde(default)]
+    pub cache: CacheFileConfig,
+    
+    /// Training data collection configuration
+    #[serde(default)]
+    pub training: TrainingFileConfig,
+    
+    /// Safety configuration
+    #[serde(default)]
+    pub safety: SafetyFileConfig,
+}
+
+fn default_enabled() -> bool { true }
+fn default_model_path() -> String { "./models/llama3-2-3b-instruct".to_string() }
+fn default_model_type() -> String { "llama3_2_3b".to_string() }
+fn default_device() -> String { "auto".to_string() }
+
+/// Generation parameters from file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerationFileConfig {
+    #[serde(default = "default_max_tokens")]
+    pub max_tokens: usize,
+    #[serde(default = "default_temperature")]
+    pub temperature: f64,
+    #[serde(default = "default_top_p")]
+    pub top_p: f64,
+    #[serde(default = "default_repetition_penalty")]
+    pub repetition_penalty: f64,
+}
+
+fn default_max_tokens() -> usize { 512 }
+fn default_temperature() -> f64 { 0.7 }
+fn default_top_p() -> f64 { 0.9 }
+fn default_repetition_penalty() -> f64 { 1.1 }
+
+impl Default for GenerationFileConfig {
+    fn default() -> Self {
+        Self {
+            max_tokens: default_max_tokens(),
+            temperature: default_temperature(),
+            top_p: default_top_p(),
+            repetition_penalty: default_repetition_penalty(),
+        }
+    }
+}
+
+/// Cache configuration from file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheFileConfig {
+    #[serde(default = "default_cache_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_max_entries")]
+    pub max_entries: usize,
+    #[serde(default = "default_ttl")]
+    pub ttl_seconds: u64,
+}
+
+fn default_cache_enabled() -> bool { true }
+fn default_max_entries() -> usize { 1000 }
+fn default_ttl() -> u64 { 300 }
+
+impl Default for CacheFileConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_cache_enabled(),
+            max_entries: default_max_entries(),
+            ttl_seconds: default_ttl(),
+        }
+    }
+}
+
+/// Training configuration from file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrainingFileConfig {
+    #[serde(default = "default_collect_data")]
+    pub collect_data: bool,
+    #[serde(default = "default_export_path")]
+    pub export_path: String,
+    #[serde(default = "default_auto_export_threshold")]
+    pub auto_export_threshold: usize,
+}
+
+fn default_collect_data() -> bool { true }
+fn default_export_path() -> String { "./training_data".to_string() }
+fn default_auto_export_threshold() -> usize { 1000 }
+
+impl Default for TrainingFileConfig {
+    fn default() -> Self {
+        Self {
+            collect_data: default_collect_data(),
+            export_path: default_export_path(),
+            auto_export_threshold: default_auto_export_threshold(),
+        }
+    }
+}
+
+/// Safety configuration from file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SafetyFileConfig {
+    #[serde(default = "default_allowed_actions")]
+    pub allowed_actions: Vec<String>,
+    #[serde(default = "default_max_confidence")]
+    pub max_confidence_threshold: f64,
+    #[serde(default = "default_require_confirmation")]
+    pub require_confirmation_above: f64,
+}
+
+fn default_allowed_actions() -> Vec<String> {
+    vec![
+        "start_election".to_string(),
+        "migrate_context".to_string(),
+        "adjust_gossip".to_string(),
+        "scale_queue".to_string(),
+        "wait".to_string(),
+        "restart_component".to_string(),
+    ]
+}
+fn default_max_confidence() -> f64 { 0.95 }
+fn default_require_confirmation() -> f64 { 0.8 }
+
+impl Default for SafetyFileConfig {
+    fn default() -> Self {
+        Self {
+            allowed_actions: default_allowed_actions(),
+            max_confidence_threshold: default_max_confidence(),
+            require_confirmation_above: default_require_confirmation(),
+        }
+    }
+}
+
+// ============================================================================
+// Distributed Orchestration Configuration
+// ============================================================================
+
+/// Distributed Orchestration configuration from TOML file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DistributedOrchestrationFileConfig {
+    /// Whether distributed orchestration is enabled
+    #[serde(default = "default_distributed_enabled")]
+    pub enabled: bool,
+    
+    /// Orchestration mode: "emergent", "permanent", or "fully_decentralized"
+    #[serde(default = "default_distributed_mode")]
+    pub mode: String,
+    
+    /// Rotation trigger: "periodic", "event_driven", or "adaptive"
+    #[serde(default = "default_rotation_trigger")]
+    pub rotation_trigger: String,
+    
+    /// Jobs before rotation (for periodic trigger)
+    #[serde(default = "default_rotation_interval")]
+    pub rotation_interval_jobs: u64,
+    
+    /// High value threshold for LLM strategy
+    #[serde(default = "default_high_value_threshold")]
+    pub high_value_threshold: f64,
+    
+    /// Complexity threshold for hybrid strategy
+    #[serde(default = "default_complexity_threshold")]
+    pub complexity_threshold: f64,
+    
+    /// Minimum nodes per context group
+    #[serde(default = "default_min_nodes_per_group")]
+    pub min_nodes_per_group: usize,
+    
+    /// Maximum groups a node can join
+    #[serde(default = "default_max_groups_per_node")]
+    pub max_groups_per_node: usize,
+    
+    /// Heartbeat timeout for partition detection (seconds)
+    #[serde(default = "default_heartbeat_timeout")]
+    pub heartbeat_timeout_secs: u64,
+    
+    /// Consensus timeout (milliseconds)
+    #[serde(default = "default_consensus_timeout")]
+    pub consensus_timeout_ms: u64,
+    
+    /// Maximum consensus rounds
+    #[serde(default = "default_max_consensus_rounds")]
+    pub max_consensus_rounds: usize,
+    
+    /// Base threshold for adaptive consensus
+    #[serde(default = "default_base_threshold")]
+    pub base_consensus_threshold: f64,
+}
+
+fn default_distributed_enabled() -> bool { false }
+fn default_distributed_mode() -> String { "emergent".to_string() }
+fn default_rotation_trigger() -> String { "adaptive".to_string() }
+fn default_rotation_interval() -> u64 { 100 }
+fn default_high_value_threshold() -> f64 { 10.0 }
+fn default_complexity_threshold() -> f64 { 0.7 }
+fn default_min_nodes_per_group() -> usize { 2 }
+fn default_max_groups_per_node() -> usize { 3 }
+fn default_heartbeat_timeout() -> u64 { 15 }
+fn default_consensus_timeout() -> u64 { 5000 }
+fn default_max_consensus_rounds() -> usize { 3 }
+fn default_base_threshold() -> f64 { 0.6 }
+
+impl Default for DistributedOrchestrationFileConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_distributed_enabled(),
+            mode: default_distributed_mode(),
+            rotation_trigger: default_rotation_trigger(),
+            rotation_interval_jobs: default_rotation_interval(),
+            high_value_threshold: default_high_value_threshold(),
+            complexity_threshold: default_complexity_threshold(),
+            min_nodes_per_group: default_min_nodes_per_group(),
+            max_groups_per_node: default_max_groups_per_node(),
+            heartbeat_timeout_secs: default_heartbeat_timeout(),
+            consensus_timeout_ms: default_consensus_timeout(),
+            max_consensus_rounds: default_max_consensus_rounds(),
+            base_consensus_threshold: default_base_threshold(),
+        }
+    }
+}
+
+impl DistributedOrchestrationFileConfig {
+    /// Convert to internal DistributedOrchestratorConfig
+    pub fn to_internal(&self) -> crate::distributed_orchestration::DistributedOrchestratorConfig {
+        use crate::distributed_orchestration::{
+            DistributedOrchestratorConfig,
+            types::{OrchestrationMode, RotationTrigger, ConsensusCriteria, AffinityWeights},
+            config::{DecisionRoutingConfig, ContextGroupConfig, PartitionHandlingConfig},
+        };
+        
+        let mode = match self.mode.as_str() {
+            "permanent" => OrchestrationMode::PermanentCoordinator {
+                coordinator_id: String::new(), // Will be set at runtime
+            },
+            "fully_decentralized" => OrchestrationMode::FullyDecentralized {
+                consensus_for_every_decision: true,
+            },
+            _ => OrchestrationMode::EmergentCoordinator {
+                rotation_trigger: match self.rotation_trigger.as_str() {
+                    "periodic" => RotationTrigger::Periodic {
+                        interval_jobs: self.rotation_interval_jobs,
+                    },
+                    "event_driven" => RotationTrigger::EventDriven,
+                    _ => RotationTrigger::Adaptive,
+                },
+                affinity_recalc_interval_secs: 60,
+            },
+        };
+        
+        DistributedOrchestratorConfig {
+            mode,
+            affinity_weights: AffinityWeights::default(),
+            consensus_criteria: ConsensusCriteria::AdaptiveThreshold {
+                base_threshold: self.base_consensus_threshold,
+                stimulus_weight: 0.6,
+                demand_weight: 0.4,
+                min_participants: 2,
+            },
+            decision_routing: DecisionRoutingConfig {
+                high_value_threshold: self.high_value_threshold,
+                complexity_threshold: self.complexity_threshold,
+                ..Default::default()
+            },
+            context_groups: ContextGroupConfig {
+                min_nodes_per_group: self.min_nodes_per_group,
+                max_groups_per_node: self.max_groups_per_node,
+                ..Default::default()
+            },
+            partition_handling: PartitionHandlingConfig {
+                heartbeat_timeout_secs: self.heartbeat_timeout_secs,
+                ..Default::default()
+            },
+            max_consensus_rounds: self.max_consensus_rounds,
+            consensus_timeout_ms: self.consensus_timeout_ms,
+            enabled: self.enabled,
+            simulation_mode: false, // Can be enabled via environment variable
+        }
+    }
+}
+
+impl OrchestratorFileConfig {
+    /// Convert to internal OrchestratorConfig
+    pub fn to_internal(&self) -> OrchestratorConfigInternal {
+        OrchestratorConfigInternal {
+            enabled: self.enabled,
+            model_path: self.model_path.clone(),
+            model_type: self.model_type.clone(),
+            device: self.device.clone(),
+            generation: GenerationConfigInternal {
+                max_tokens: self.generation.max_tokens,
+                temperature: self.generation.temperature,
+                top_p: self.generation.top_p,
+                repetition_penalty: self.generation.repetition_penalty,
+            },
+            cache: CacheConfigInternal {
+                enabled: self.cache.enabled,
+                max_entries: self.cache.max_entries,
+                ttl_seconds: self.cache.ttl_seconds,
+            },
+            training: TrainingConfigInternal {
+                collect_data: self.training.collect_data,
+                export_path: self.training.export_path.clone(),
+                auto_export_threshold: self.training.auto_export_threshold,
+            },
+            safety: SafetyConfigInternal {
+                allowed_actions: self.safety.allowed_actions.clone(),
+                max_confidence_threshold: self.safety.max_confidence_threshold,
+                require_confirmation_above: self.safety.require_confirmation_above,
+            },
+        }
+    }
 }
 
 fn default_mdns() -> bool { true }
@@ -77,7 +427,43 @@ impl Default for NodeConfig {
             enable_mdns: true,
             connection_timeout_secs: 30,
             max_peers: 50,
+            orchestrator: None,
+            distributed_orchestration: None,
         }
+    }
+}
+
+impl NodeConfig {
+    /// Get the orchestrator configuration, converting from file format if present
+    pub fn get_orchestrator_config(&self) -> OrchestratorConfigInternal {
+        self.orchestrator
+            .as_ref()
+            .map(|c| c.to_internal())
+            .unwrap_or_default()
+    }
+    
+    /// Check if orchestrator is enabled in config
+    pub fn is_orchestrator_enabled(&self) -> bool {
+        self.orchestrator
+            .as_ref()
+            .map(|c| c.enabled)
+            .unwrap_or(false)
+    }
+    
+    /// Get the distributed orchestration configuration, converting from file format if present
+    pub fn get_distributed_orchestration_config(&self) -> crate::distributed_orchestration::DistributedOrchestratorConfig {
+        self.distributed_orchestration
+            .as_ref()
+            .map(|c| c.to_internal())
+            .unwrap_or_default()
+    }
+    
+    /// Check if distributed orchestration is enabled in config
+    pub fn is_distributed_orchestration_enabled(&self) -> bool {
+        self.distributed_orchestration
+            .as_ref()
+            .map(|c| c.enabled)
+            .unwrap_or(false)
     }
 }
 

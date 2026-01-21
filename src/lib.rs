@@ -16,8 +16,12 @@ pub mod network;
 pub mod executor;
 pub mod inference;
 pub mod monitoring;
+pub mod orchestration;
 pub mod resources;
 pub mod error;
+pub mod query_handler;
+pub mod job_store;
+pub mod distributed_orchestration;
 
 // Core data types
 pub use config::NodeConfig;

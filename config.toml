@@ -21,3 +21,53 @@ max_concurrent_jobs = 1
 enable_metrics = true
 metrics_port = 9090
 log_format = "json"
+
+# LLM Orchestrator Configuration
+# Provides cognitive orchestration using local LLMs
+[orchestrator]
+# Enable/disable the orchestrator
+enabled = true
+
+# Path to model files
+model_path = "./models/llama3-2-3b-instruct"
+
+# Model type: llama3_2_3b, llama3_2_1b, mistral_7b, phi3
+model_type = "llama3_2_3b"
+
+# Device: auto, cpu, cuda, metal
+device = "auto"
+
+# Generation parameters
+[orchestrator.generation]
+max_tokens = 512
+temperature = 0.7
+top_p = 0.9
+repetition_penalty = 1.1
+
+# Decision caching
+[orchestrator.cache]
+enabled = true
+max_entries = 1000
+ttl_seconds = 300
+
+# Training data collection for fine-tuning
+[orchestrator.training]
+collect_data = true
+export_path = "./training_data"
+auto_export_threshold = 1000
+
+# Safety configuration
+[orchestrator.safety]
+# Allowed actions that the orchestrator can suggest
+allowed_actions = [
+    "start_election",
+    "migrate_context",
+    "adjust_gossip",
+    "scale_queue",
+    "wait",
+    "restart_component"
+]
+# Maximum confidence threshold
+max_confidence_threshold = 0.95
+# Require user confirmation for decisions above this confidence
+require_confirmation_above = 0.8

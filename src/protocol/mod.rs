@@ -7,8 +7,12 @@ pub mod messages;
 pub mod validation;
 pub mod crypto;
 pub mod version;
+pub mod queries;
+pub mod query_codec;
 
 pub use messages::*;
 pub use validation::*;
 pub use crypto::*;
 pub use version::*;
+pub use queries::*;
+pub use query_codec::*;

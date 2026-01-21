@@ -4,8 +4,9 @@
 //! - Job Executor
 //! - Inference Engine
 //! - Health Monitor
+//! - LLM Orchestrator (optional)
 //!
-//! Implements Requirements 1.4, 1.5, 3.4
+//! Implements Requirements 1.4, 1.5, 3.4, 10.1-10.5
 
 use anyhow::{anyhow, Result};
 use libp2p::identity::Keypair;
@@ -13,11 +14,17 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 // Import from mvp_node library
 use mvp_node::InferenceEngine;
 use mvp_node::JobExecutor;
+use mvp_node::orchestration::{
+    LLMOrchestrator, Orchestrator, OrchestratorConfig, DecisionType, 
+    Decision, SupportedModel, OrchestratorMetrics,
+};
+use mvp_node::query_handler::QueryHandler;
+use mvp_node::protocol::{Query, QueryResponse};
 
 /// Node state during lifecycle
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,6 +75,12 @@ pub struct MvpNode {
     /// Health monitor
     monitor: Arc<mvp_node::monitoring::DefaultHealthMonitor>,
     
+    /// LLM Orchestrator (optional) - Property 40: Optional module loading
+    orchestrator: Option<Arc<LLMOrchestrator>>,
+    
+    /// Query handler for CLI P2P queries
+    query_handler: Arc<QueryHandler>,
+    
     /// Start time for uptime tracking
     start_time: Option<Instant>,
 }
@@ -97,15 +110,62 @@ impl MvpNode {
         // Create health monitor
         let monitor = mvp_node::monitoring::DefaultHealthMonitor::new();
         
+        let monitor = Arc::new(monitor);
+        
+        // Create LLM Orchestrator (optional feature) - Property 40: Optional module loading
+        let orchestrator = Self::create_orchestrator(
+            &config,
+            Arc::clone(&monitor),
+        );
+        
+        // Create Query Handler for CLI P2P queries
+        let query_handler = QueryHandler::new(
+            Arc::clone(&monitor),
+            config.node_id.clone(),
+            peer_id,
+            config.max_queue_size,
+        );
+        
         Ok(Self {
             config,
             keypair,
             state: Arc::new(RwLock::new(NodeState::Initializing)),
             executor: Arc::new(Mutex::new(executor)),
             inference_engine: inference_arc,
-            monitor: Arc::new(monitor),
+            monitor,
+            orchestrator,
+            query_handler: Arc::new(query_handler),
             start_time: None,
         })
+    }
+    
+    /// Create the LLM Orchestrator if enabled in config
+    /// Property 40: Optional module loading - Requirements 10.1
+    fn create_orchestrator(
+        config: &mvp_node::config::NodeConfig,
+        monitor: Arc<mvp_node::monitoring::DefaultHealthMonitor>,
+    ) -> Option<Arc<LLMOrchestrator>> {
+        // Get orchestrator config from file or use defaults
+        let orch_config = config.get_orchestrator_config();
+        
+        if !orch_config.enabled {
+            info!("LLM Orchestrator is disabled in configuration");
+            return None;
+        }
+        
+        info!("Initializing LLM Orchestrator with model type: {}", orch_config.model_type);
+        debug!("Orchestrator config: model_path={}, device={}", 
+            orch_config.model_path, orch_config.device);
+        
+        let orchestrator = LLMOrchestrator::new(
+            orch_config,
+            monitor,
+            config.node_id.clone(),
+            config.max_queue_size,
+        );
+        
+        info!("LLM Orchestrator initialized successfully");
+        Some(Arc::new(orchestrator))
     }
 
     /// Get the node's peer ID
@@ -303,6 +363,106 @@ impl MvpNode {
     pub async fn get_queue_status(&self) -> mvp_node::QueueStatus {
         let executor = self.executor.lock().await;
         executor.get_queue_status()
+    }
+    
+    // ========================================================================
+    // LLM Orchestrator Integration - Requirements 10.1-10.5
+    // ========================================================================
+    
+    /// Check if orchestrator is enabled and available
+    /// Property 44: Graceful disable - Requirements 10.5
+    pub fn is_orchestrator_enabled(&self) -> bool {
+        self.orchestrator.as_ref().map(|o| o.is_enabled()).unwrap_or(false)
+    }
+    
+    /// Get orchestrator reference (if available)
+    pub fn get_orchestrator(&self) -> Option<Arc<LLMOrchestrator>> {
+        self.orchestrator.clone()
+    }
+    
+    /// Request a decision from the LLM Orchestrator
+    /// Property 41: Health monitor integration - Requirements 10.2
+    pub async fn request_orchestration_decision(
+        &self,
+        context: &str,
+        decision_type: DecisionType,
+    ) -> Result<Decision> {
+        let orchestrator = self.orchestrator.as_ref()
+            .ok_or_else(|| anyhow!("Orchestrator not enabled"))?;
+        
+        debug!(context = %context, decision_type = ?decision_type, "Requesting orchestration decision");
+        
+        let decision = orchestrator.make_decision(context, decision_type).await
+            .map_err(|e| anyhow!("Orchestration error: {}", e))?;
+        
+        info!(
+            decision = %decision.decision,
+            confidence = decision.confidence,
+            actions = decision.actions.len(),
+            "Orchestration decision made"
+        );
+        
+        Ok(decision)
+    }
+    
+    /// Interpret a natural language command
+    /// Requirements 7.1-7.5
+    pub async fn interpret_natural_language(
+        &self,
+        input: &str,
+    ) -> Result<mvp_node::orchestration::InterpretationResult> {
+        let orchestrator = self.orchestrator.as_ref()
+            .ok_or_else(|| anyhow!("Orchestrator not enabled"))?;
+        
+        orchestrator.interpret_natural_language(input).await
+            .map_err(|e| anyhow!("NL interpretation error: {}", e))
+    }
+    
+    /// Get orchestrator metrics
+    /// Requirements 6.1-6.4
+    pub fn get_orchestrator_metrics(&self) -> Option<OrchestratorMetrics> {
+        self.orchestrator.as_ref().map(|o| o.get_metrics())
+    }
+    
+    /// Load orchestrator model
+    pub async fn load_orchestrator_model(&self, model: SupportedModel) -> Result<()> {
+        let orchestrator = self.orchestrator.as_ref()
+            .ok_or_else(|| anyhow!("Orchestrator not enabled"))?;
+        
+        orchestrator.load_model(model).await
+            .map_err(|e| anyhow!("Model load error: {}", e))
+    }
+    
+    /// Export training data from orchestrator
+    /// Requirements 3.4, 3.5
+    pub async fn export_orchestrator_training_data(
+        &self,
+        path: &str,
+        format: mvp_node::orchestration::DatasetFormat,
+    ) -> Result<usize> {
+        let orchestrator = self.orchestrator.as_ref()
+            .ok_or_else(|| anyhow!("Orchestrator not enabled"))?;
+        
+        orchestrator.export_training_data(path, format).await
+            .map_err(|e| anyhow!("Export error: {}", e))
+    }
+    
+    // ========================================================================
+    // Query Handler Integration - CLI P2P Queries
+    // ========================================================================
+    
+    /// Handle an incoming query from the P2P network
+    /// 
+    /// This method processes queries from CLI clients via the request-response protocol.
+    /// Property 10: Node Query Response Time - responds within 1 second.
+    pub async fn handle_query(&self, query: Query) -> QueryResponse {
+        debug!("Handling query from network: {:?}", query);
+        self.query_handler.handle_query(query).await
+    }
+    
+    /// Get reference to the query handler
+    pub fn get_query_handler(&self) -> Arc<QueryHandler> {
+        Arc::clone(&self.query_handler)
     }
 }
 

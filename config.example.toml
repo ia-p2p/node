@@ -1,0 +1,150 @@
+# MVP Node Configuration Example
+# Copy this file to config.toml and customize as needed
+
+# ============================================================================
+# Core Node Configuration
+# ============================================================================
+
+# Unique node identifier (use "auto" for automatic generation)
+node_id = "node-1"
+
+# Network listen port (0 for automatic assignment)
+listen_port = 9000
+
+# Bootstrap peers for network discovery
+# Format: /ip4/<ip>/tcp/<port>/p2p/<peer_id>
+bootstrap_peers = []
+
+# Path to the AI model file
+model_path = "./models/tinyllama-1.1b"
+
+# Maximum job queue size
+max_queue_size = 100
+
+# Logging level: trace, debug, info, warn, error
+log_level = "info"
+
+# Instance-specific data directory (optional)
+# data_dir = "/path/to/data"
+
+# Enable mDNS for local peer discovery
+enable_mdns = true
+
+# Connection timeout in seconds
+connection_timeout_secs = 30
+
+# Maximum number of peers
+max_peers = 50
+
+# ============================================================================
+# LLM Orchestrator Configuration (Local Decisions)
+# ============================================================================
+
+[orchestrator]
+# Enable the local LLM orchestrator
+enabled = true
+
+# Path to the model files
+model_path = "./models/llama3-2-3b-instruct"
+
+# Model type: "llama3_2_3b", "mistral", "phi"
+model_type = "llama3_2_3b"
+
+# Device: "auto", "cpu", "cuda", "metal"
+device = "auto"
+
+[orchestrator.generation]
+# Maximum tokens to generate per response
+max_tokens = 512
+
+# Temperature for generation (0.0-1.0)
+temperature = 0.7
+
+# Top-p sampling
+top_p = 0.9
+
+# Repetition penalty
+repetition_penalty = 1.1
+
+[orchestrator.cache]
+# Enable decision caching
+enabled = true
+
+# Maximum cache entries
+max_entries = 1000
+
+# Cache TTL in seconds
+ttl_seconds = 300
+
+[orchestrator.training]
+# Collect training data from decisions
+collect_data = true
+
+# Path to export training data
+export_path = "./training_data"
+
+[orchestrator.safety]
+# Allowed actions the orchestrator can recommend
+allowed_actions = [
+    "start_election",
+    "migrate_context",
+    "adjust_gossip",
+    "scale_queue",
+    "wait",
+    "restart_component"
+]
+
+# Maximum confidence threshold
+max_confidence_threshold = 0.95
+
+# Require confirmation above this confidence
+require_confirmation_above = 0.8
+
+# ============================================================================
+# Distributed Orchestration Configuration (Multi-Node Consensus)
+# ============================================================================
+
+[distributed_orchestration]
+# Enable distributed orchestration with swarm intelligence
+enabled = false
+
+# Mode: "emergent" (default), "permanent", or "fully_decentralized"
+# - emergent: Coordinators emerge based on affinity scores and rotate
+# - permanent: Fixed coordinator (useful for testing)
+# - fully_decentralized: Every decision requires consensus
+mode = "emergent"
+
+# Rotation trigger for emergent mode: "periodic", "event_driven", or "adaptive"
+# - periodic: Rotate after N jobs
+# - event_driven: Rotate on significant events
+# - adaptive: Combine both approaches
+rotation_trigger = "adaptive"
+
+# Jobs before rotation (for periodic trigger)
+rotation_interval_jobs = 100
+
+# High value threshold - jobs above this use LLM strategy
+high_value_threshold = 10.0
+
+# Complexity threshold - jobs above this use hybrid strategy
+complexity_threshold = 0.7
+
+# Minimum nodes required to form a context group
+min_nodes_per_group = 2
+
+# Maximum context groups a node can join
+max_groups_per_node = 3
+
+# Heartbeat timeout for partition detection (seconds)
+heartbeat_timeout_secs = 15
+
+# Consensus timeout (milliseconds)
+consensus_timeout_ms = 5000
+
+# Maximum consensus rounds before fallback
+max_consensus_rounds = 3
+
+# Base threshold for adaptive consensus (0.0-1.0)
+# Lower = easier to reach consensus, higher = more agreement required
+base_consensus_threshold = 0.6
+

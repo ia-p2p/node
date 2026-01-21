@@ -155,11 +155,206 @@ MVP Node
 │   ├── Health Status
 │   ├── Metrics Collection
 │   └── Structured Logging
+├── LLM Orchestrator
+│   ├── Local LLM Backend (Candle)
+│   ├── Metrics Aggregator
+│   ├── Decision Validator
+│   ├── Training Data Collector
+│   ├── Natural Language Interface
+│   └── Decision Cache
+├── Distributed Orchestration (NEW)
+│   ├── Affinity Calculator
+│   ├── Adaptive Consensus (Response Threshold Model)
+│   ├── Decision Router
+│   ├── Context Group Manager
+│   ├── Partition Handler
+│   ├── P2P Adapter
+│   └── Network Integration Bridge
 └── Error Handling
     ├── Error Categories
     ├── Recovery Strategies
     └── Connection Cleanup
 ```
+
+## LLM Orchestrator
+
+The LLM Orchestrator provides cognitive orchestration capabilities using local language models.
+It analyzes system state and makes intelligent decisions about infrastructure management.
+
+### Features
+
+- **Infrastructure Decisions**: Automatic scaling, load balancing, resource allocation
+- **Context Management**: Optimize memory usage and context distribution
+- **Natural Language Interface**: Execute commands using natural language
+- **Training Data Collection**: Collect decision data for future fine-tuning
+- **Decision Caching**: Cache similar decisions for faster responses
+
+### CLI Commands
+
+```bash
+# Request a decision
+mvp-node orchestrator decision --context "high CPU usage, queue full" --decision-type infrastructure
+
+# Natural language query
+mvp-node orchestrator ask "show me all connected nodes"
+
+# View metrics
+mvp-node orchestrator metrics
+
+# Check status
+mvp-node orchestrator status
+
+# Export training data
+mvp-node orchestrator export-data --output ./training.jsonl --format jsonl
+```
+
+### Configuration
+
+Add to your `config.toml`:
+
+```toml
+[orchestrator]
+enabled = true
+model_path = "./models/llama3-2-3b-instruct"
+model_type = "llama3_2_3b"  # llama3_2_3b, llama3_2_1b, mistral_7b, phi3
+device = "auto"             # auto, cpu, cuda, metal
+
+[orchestrator.generation]
+max_tokens = 512
+temperature = 0.7
+top_p = 0.9
+repetition_penalty = 1.1
+
+[orchestrator.cache]
+enabled = true
+max_entries = 1000
+ttl_seconds = 300
+
+[orchestrator.training]
+collect_data = true
+export_path = "./training_data"
+auto_export_threshold = 1000
+
+[orchestrator.safety]
+allowed_actions = ["start_election", "migrate_context", "adjust_gossip", "scale_queue", "wait"]
+max_confidence_threshold = 0.95
+require_confirmation_above = 0.8
+```
+
+### Supported Models
+
+| Model | Size | Best For |
+|-------|------|----------|
+| Llama 3.2 3B | 3B | General orchestration, best quality |
+| Llama 3.2 1B | 1B | Fast decisions, lower resource usage |
+| Mistral 7B | 7B | Complex reasoning, higher resource usage |
+| Phi-3 | 3.8B | Efficient reasoning, good balance |
+
+### Example Usage
+
+```rust
+use mvp_node::orchestration::{LLMOrchestrator, DecisionType};
+
+// Create orchestrator
+let orchestrator = LLMOrchestrator::new(config, monitor, node_id, max_queue);
+
+// Make a decision
+let decision = orchestrator.make_decision(
+    "High CPU usage detected, queue at 80%",
+    DecisionType::Infrastructure
+).await?;
+
+println!("Decision: {}", decision.decision);
+println!("Confidence: {:.1}%", decision.confidence * 100.0);
+
+// Natural language query
+let result = orchestrator.interpret_natural_language(
+    "show me the status of all nodes"
+).await?;
+
+println!("Intent: {}", result.intent);
+for cmd in result.commands {
+    println!("Execute: {} {:?}", cmd.command, cmd.args);
+}
+```
+
+## Distributed Orchestration
+
+O sistema de orquestração distribuída implementa coordenação multi-nó inspirada em Swarm Intelligence.
+
+### Características
+
+- **Coordenação Emergente**: Coordenadores surgem baseados em pontuação de afinidade
+- **Consenso Adaptativo**: Modelo de Response Threshold (inspirado em insetos sociais)
+- **Decision Routing**: Seleção automática entre heurística, LLM ou híbrido
+- **Context Groups**: Grupos dinâmicos de nós especializados
+- **Partition Handling**: Detecção e reconciliação automática de partições
+
+### Modos de Operação
+
+| Modo | Descrição |
+|------|-----------|
+| `emergent` | Coordenadores emergem e rotacionam baseado em afinidade |
+| `permanent` | Coordenador fixo (útil para testes) |
+| `fully_decentralized` | Cada decisão requer consenso distribuído |
+
+### Configuração
+
+```toml
+[distributed_orchestration]
+enabled = true
+mode = "emergent"
+rotation_trigger = "adaptive"
+high_value_threshold = 10.0
+complexity_threshold = 0.7
+min_nodes_per_group = 2
+max_groups_per_node = 3
+heartbeat_timeout_secs = 15
+consensus_timeout_ms = 5000
+max_consensus_rounds = 3
+base_consensus_threshold = 0.6
+```
+
+### Uso Programático
+
+```rust
+use mvp_node::distributed_orchestration::{
+    DistributedOrchestrator, DistributedOrchestratorTrait,
+    DecisionContext, DecisionType, DistributedOrchestratorConfig,
+};
+
+// Criar orchestrator
+let config = DistributedOrchestratorConfig::default();
+let orchestrator = DistributedOrchestrator::new(config, "node-1".to_string(), None);
+
+// Fazer decisão distribuída
+let context = DecisionContext {
+    decision_type: "job_routing".to_string(),
+    is_critical: false,
+    job_value: 1.0,
+    complexity_score: 0.2,
+    ..Default::default()
+};
+
+let result = orchestrator
+    .make_distributed_decision(&context, DecisionType::JobRouting)
+    .await?;
+
+println!("Decision: {}", result.decision);
+println!("Strategy: {:?}", result.strategy_used);
+println!("Latency: {}ms", result.latency_ms);
+```
+
+### Simulation Mode
+
+Para testes sem efeitos colaterais:
+
+```rust
+let config = DistributedOrchestratorConfig::simulation();
+assert!(config.is_simulation());
+```
+
+Para documentação completa, veja [docs/DISTRIBUTED-ORCHESTRATION.md](../docs/DISTRIBUTED-ORCHESTRATION.md).
 
 ## Protocol Compliance
 
@@ -307,10 +502,43 @@ mvp-node/
 │   ├── protocol/        # Message types and validation
 │   ├── monitoring/      # Metrics and health
 │   ├── resources/       # Load management
+│   ├── orchestration/   # LLM Orchestrator
+│   │   ├── mod.rs              # Module exports
+│   │   ├── orchestrator.rs     # Core orchestrator
+│   │   ├── llm_backend.rs      # Local LLM inference
+│   │   ├── metrics_aggregator.rs
+│   │   ├── decision_validator.rs
+│   │   ├── training_collector.rs
+│   │   ├── natural_language.rs
+│   │   ├── cache.rs            # Decision caching
+│   │   ├── prompts.rs          # Prompt templates
+│   │   ├── types.rs            # Data structures
+│   │   └── error.rs            # Error types
+│   ├── distributed_orchestration/  # Distributed Orchestration (NEW)
+│   │   ├── mod.rs              # Core DistributedOrchestrator
+│   │   ├── types.rs            # Types and enums
+│   │   ├── config.rs           # Configuration
+│   │   ├── affinity.rs         # Affinity Calculator
+│   │   ├── rotation.rs         # Coordinator Rotation
+│   │   ├── consensus.rs        # Adaptive Consensus
+│   │   ├── threshold.rs        # Threshold Adapter
+│   │   ├── decision_router.rs  # Strategy Selection
+│   │   ├── strategies.rs       # Heuristic Strategies
+│   │   ├── context_groups.rs   # Context Group Manager
+│   │   ├── partition.rs        # Partition Handler
+│   │   ├── protocols.rs        # P2P Message Types
+│   │   ├── metrics.rs          # Metrics Collection
+│   │   ├── p2p_adapter.rs      # P2P Adapter
+│   │   └── network_integration.rs # Network Bridge
 │   └── error.rs         # Error handling
+├── examples/
+│   ├── submit_job.rs
+│   └── orchestrator_demo.rs # Orchestrator example
 ├── tests/
-│   ├── property_tests.rs    # Property-based tests
-│   └── integration_tests.rs # E2E integration tests
+│   ├── property_tests.rs                      # Property-based tests
+│   ├── integration_tests.rs                   # E2E integration tests
+│   ├── distributed_orchestration_tests.rs     # Distributed orchestration E2E
+│   └── distributed_orchestration_property_tests.rs  # Property tests
 └── Cargo.toml
 ```
 
@@ -329,6 +557,11 @@ cargo test --test property_tests
 # Integration tests (requires serial execution)
 cargo test --test integration_tests
 
+# Distributed Orchestration tests
+cargo test --lib distributed_orchestration
+cargo test --test distributed_orchestration_tests
+cargo test --test distributed_orchestration_property_tests
+
 # Specific test
 cargo test test_full_job_lifecycle
 
@@ -340,10 +573,20 @@ RUST_LOG=debug cargo test -- --nocapture
 
 | Category | Tests | Coverage |
 |----------|-------|----------|
-| Unit Tests | 64 | Core functionality |
-| Property Tests | 207 | Invariants & edge cases |
-| Integration Tests | 30 | E2E workflows |
-| **Total** | **301** | Full requirements |
+| Unit Tests (lib) | 250 | Core functionality |
+| Property Tests | 235 | Invariants & edge cases |
+| Integration Tests | 47 | E2E workflows |
+| Doctest | 14 | Documentation examples |
+| **Total** | **546** | Full requirements |
+
+#### Distributed Orchestration Tests
+
+| Category | Tests |
+|----------|-------|
+| Unit Tests | 64 |
+| Integration Tests | 17 |
+| Property Tests | 28 |
+| **Subtotal** | **109** |
 
 ### Spec-Driven Development
 
@@ -365,6 +608,20 @@ This project follows spec-driven development:
 | 6 | Concurrency and Load | ✅ |
 | 7 | Protocol Compliance | ✅ |
 | 8 | Multi-Instance Support | ✅ |
+| 9 | LLM Orchestrator | ✅ |
+| 10 | Natural Language Interface | ✅ |
+| 11 | Distributed Orchestration | ✅ |
+
+### Distributed Orchestration Requirements (29/29)
+
+| Requirement | Description | Status |
+|-------------|-------------|--------|
+| 1-5 | Emergent Coordination | ✅ |
+| 6-10 | Adaptive Consensus | ✅ |
+| 11-15 | Decision Routing | ✅ |
+| 16-20 | Context Groups | ✅ |
+| 21-24 | Partition Handling | ✅ |
+| 25-29 | Integration & Testing | ✅ |
 
 ## License
 

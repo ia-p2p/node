@@ -1,8 +1,11 @@
 //! P2P network layer implementation using libp2p
 //! 
-//! This module implements the NetworkLayer trait with gossipsub, mDNS, and identify protocols.
+//! This module implements the NetworkLayer trait with gossipsub, mDNS, identify,
+//! and request-response protocols.
+//!
+//! Implements Requirements 1.1, 1.2, 1.5 for request-response protocol.
 
-use crate::protocol::P2PMessage;
+use crate::protocol::{P2PMessage, Query, QueryResponse, QueryCodec, QUERY_PROTOCOL_ID};
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -11,8 +14,9 @@ use libp2p::{
     identify,
     identity::Keypair,
     mdns, noise,
+    request_response::{self, ProtocolSupport, OutboundRequestId, InboundRequestId, ResponseChannel},
     swarm::{NetworkBehaviour, SwarmEvent},
-    tcp, yamux, Multiaddr, PeerId, Swarm,
+    tcp, yamux, Multiaddr, PeerId, Swarm, StreamProtocol,
 };
 use std::collections::{HashMap, hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
@@ -67,6 +71,12 @@ pub mod topics {
     pub const JOB_OFFER: &str = "p2p-ai/job-offer/1.0";
     pub const JOB_CLAIM: &str = "p2p-ai/job-claim/1.0";
     pub const RECEIPT: &str = "p2p-ai/receipt/1.0";
+    
+    // Distributed Orchestration topics
+    pub const ORCHESTRATION_CONSENSUS: &str = "p2p-ai/orchestration/consensus/1.0";
+    pub const ORCHESTRATION_GROUPS: &str = "p2p-ai/orchestration/groups/1.0";
+    pub const ORCHESTRATION_COORDINATION: &str = "p2p-ai/orchestration/coordination/1.0";
+    pub const ORCHESTRATION_HEARTBEAT: &str = "p2p-ai/orchestration/heartbeat/1.0";
 }
 
 /// Events emitted by the network layer
@@ -79,12 +89,42 @@ pub enum NetworkEvent {
         message: P2PMessage,
         source: Option<PeerId>,
     },
+    /// Raw orchestration message received (for distributed orchestration)
+    OrchestrationMessageReceived {
+        topic: String,
+        data: Vec<u8>,
+        source: Option<PeerId>,
+    },
     Published {
         topic: String,
     },
     ConnectionEstablished(PeerId),
     ConnectionClosed(PeerId),
+    /// Response received for an outbound query
+    QueryResponseReceived {
+        request_id: OutboundRequestId,
+        peer: PeerId,
+        response: QueryResponse,
+    },
+    /// Outbound query failed
+    QueryFailed {
+        request_id: OutboundRequestId,
+        peer: PeerId,
+        error: String,
+    },
 }
+
+/// Query received event - separate because ResponseChannel doesn't implement Clone
+#[derive(Debug)]
+pub struct QueryReceivedEvent {
+    pub peer: PeerId,
+    pub query: Query,
+    pub channel: ResponseChannel<QueryResponse>,
+}
+
+/// Channel for receiving query events
+pub type QueryEventReceiver = mpsc::Receiver<QueryReceivedEvent>;
+pub type QueryEventSender = mpsc::Sender<QueryReceivedEvent>;
 
 /// Combined network behaviour for libp2p
 #[derive(NetworkBehaviour)]
@@ -92,6 +132,8 @@ pub struct P2PBehaviour {
     pub gossipsub: gossipsub::Behaviour,
     pub mdns: mdns::tokio::Behaviour,
     pub identify: identify::Behaviour,
+    /// Request-response protocol for direct queries (CLI <-> Node)
+    pub request_response: request_response::Behaviour<QueryCodec>,
 }
 
 /// Bootstrap node mode for network initialization
@@ -141,6 +183,9 @@ pub struct P2PNetworkLayer {
     swarm: Swarm<P2PBehaviour>,
     event_tx: mpsc::Sender<NetworkEvent>,
     event_rx: Option<mpsc::Receiver<NetworkEvent>>,
+    /// Channel for query events (separate because ResponseChannel doesn't implement Clone)
+    query_event_tx: QueryEventSender,
+    query_event_rx: Option<QueryEventReceiver>,
     peers: HashMap<PeerId, PeerInfo>,
     subscribed_topics: Vec<String>,
     is_running: bool,
@@ -204,11 +249,23 @@ impl P2PNetworkLayer {
             "/mvp-node/1.0.0".to_string(),
             keypair.public(),
         ));
+        
+        // Request-response protocol for direct queries
+        // Property 1: Query Response Timeliness - 30 second timeout
+        let request_response = request_response::Behaviour::new(
+            [(
+                StreamProtocol::new(QUERY_PROTOCOL_ID),
+                ProtocolSupport::Full,
+            )],
+            request_response::Config::default()
+                .with_request_timeout(Duration::from_secs(30)),
+        );
 
         let behaviour = P2PBehaviour {
             gossipsub,
             mdns,
             identify,
+            request_response,
         };
 
         let swarm = libp2p::SwarmBuilder::with_existing_identity(keypair)
@@ -222,10 +279,15 @@ impl P2PNetworkLayer {
             .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
             .build();
 
+        // Create query event channel
+        let (query_event_tx, query_event_rx) = mpsc::channel(100);
+
         Ok(Self {
             swarm,
             event_tx,
             event_rx: Some(event_rx),
+            query_event_tx,
+            query_event_rx: Some(query_event_rx),
             peers: HashMap::new(),
             subscribed_topics: Vec::new(),
             is_running: false,
@@ -234,6 +296,11 @@ impl P2PNetworkLayer {
             known_bootstrap_peers: Vec::new(),
             started_at: None,
         })
+    }
+    
+    /// Take the query event receiver (can only be called once)
+    pub fn take_query_event_receiver(&mut self) -> Option<QueryEventReceiver> {
+        self.query_event_rx.take()
     }
 
     /// Create a new P2P network layer configured as a bootstrap node
@@ -320,6 +387,32 @@ impl P2PNetworkLayer {
         debug!("Published message to topic: {}", topic_str);
         Ok(())
     }
+    
+    /// Publish raw bytes to a topic (for orchestration messages)
+    pub fn publish_raw(&mut self, topic_str: &str, data: Vec<u8>) -> Result<()> {
+        let topic = IdentTopic::new(topic_str);
+        self.swarm
+            .behaviour_mut()
+            .gossipsub
+            .publish(topic, data)?;
+        debug!("Published raw message to topic: {}", topic_str);
+        Ok(())
+    }
+    
+    /// Subscribe to distributed orchestration topics
+    pub fn subscribe_orchestration_topics(&mut self) -> Result<()> {
+        self.subscribe_topic_internal(topics::ORCHESTRATION_CONSENSUS)?;
+        self.subscribe_topic_internal(topics::ORCHESTRATION_GROUPS)?;
+        self.subscribe_topic_internal(topics::ORCHESTRATION_COORDINATION)?;
+        self.subscribe_topic_internal(topics::ORCHESTRATION_HEARTBEAT)?;
+        info!("Subscribed to distributed orchestration topics");
+        Ok(())
+    }
+    
+    /// Check if a topic is an orchestration topic
+    pub fn is_orchestration_topic(topic: &str) -> bool {
+        topic.starts_with("p2p-ai/orchestration/")
+    }
 
     /// Get peer information
     pub fn get_peer_info(&self, peer_id: &PeerId) -> Option<&PeerInfo> {
@@ -364,19 +457,33 @@ impl P2PNetworkLayer {
                 ..
             })) => {
                 let topic = message.topic.to_string();
-                match P2PMessage::from_bytes(&message.data) {
-                    Ok(msg) => {
-                        let event = NetworkEvent::MessageReceived {
-                            topic,
-                            message: msg,
-                            source: Some(propagation_source),
-                        };
-                        if let Err(e) = self.event_tx.send(event).await {
-                            warn!("Failed to send network event: {}", e);
-                        }
+                
+                // Check if this is an orchestration message
+                if Self::is_orchestration_topic(&topic) {
+                    let event = NetworkEvent::OrchestrationMessageReceived {
+                        topic,
+                        data: message.data.clone(),
+                        source: Some(propagation_source),
+                    };
+                    if let Err(e) = self.event_tx.send(event).await {
+                        warn!("Failed to send orchestration event: {}", e);
                     }
-                    Err(e) => {
-                        warn!("Failed to parse P2P message: {}", e);
+                } else {
+                    // Regular P2P message
+                    match P2PMessage::from_bytes(&message.data) {
+                        Ok(msg) => {
+                            let event = NetworkEvent::MessageReceived {
+                                topic,
+                                message: msg,
+                                source: Some(propagation_source),
+                            };
+                            if let Err(e) = self.event_tx.send(event).await {
+                                warn!("Failed to send network event: {}", e);
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to parse P2P message: {}", e);
+                        }
                     }
                 }
             }
@@ -487,8 +594,82 @@ impl P2PNetworkLayer {
             SwarmEvent::IncomingConnectionError { error, .. } => {
                 warn!("Incoming connection error: {}", error);
             }
+            // Request-Response events
+            SwarmEvent::Behaviour(P2PBehaviourEvent::RequestResponse(
+                request_response::Event::Message { peer, message }
+            )) => {
+                match message {
+                    request_response::Message::Request { request, channel, .. } => {
+                        debug!("Received query from {}: {:?}", peer, request);
+                        // Send to query event channel (separate because ResponseChannel doesn't implement Clone)
+                        if let Err(e) = self.query_event_tx.send(QueryReceivedEvent {
+                            peer,
+                            query: request,
+                            channel,
+                        }).await {
+                            warn!("Failed to send query received event: {}", e);
+                        }
+                    }
+                    request_response::Message::Response { request_id, response } => {
+                        debug!("Received response from {} for request {:?}", peer, request_id);
+                        if let Err(e) = self.event_tx.send(NetworkEvent::QueryResponseReceived {
+                            request_id,
+                            peer,
+                            response,
+                        }).await {
+                            warn!("Failed to send query response event: {}", e);
+                        }
+                    }
+                }
+            }
+            SwarmEvent::Behaviour(P2PBehaviourEvent::RequestResponse(
+                request_response::Event::OutboundFailure { peer, request_id, error, .. }
+            )) => {
+                warn!("Query to {} failed: {:?}", peer, error);
+                if let Err(e) = self.event_tx.send(NetworkEvent::QueryFailed {
+                    request_id,
+                    peer,
+                    error: format!("{:?}", error),
+                }).await {
+                    warn!("Failed to send query failed event: {}", e);
+                }
+            }
+            SwarmEvent::Behaviour(P2PBehaviourEvent::RequestResponse(
+                request_response::Event::InboundFailure { peer, error, .. }
+            )) => {
+                warn!("Inbound query from {} failed: {:?}", peer, error);
+            }
+            SwarmEvent::Behaviour(P2PBehaviourEvent::RequestResponse(
+                request_response::Event::ResponseSent { peer, .. }
+            )) => {
+                debug!("Response sent to {}", peer);
+            }
             _ => {}
         }
+    }
+    
+    /// Send a query to a peer
+    /// 
+    /// Returns an OutboundRequestId that can be used to match the response.
+    pub fn send_query(&mut self, peer: &PeerId, query: Query) -> OutboundRequestId {
+        info!("Sending query to {}: {:?}", peer, query);
+        self.swarm
+            .behaviour_mut()
+            .request_response
+            .send_request(peer, query)
+    }
+    
+    /// Send a response to a query
+    pub fn send_query_response(
+        &mut self,
+        channel: ResponseChannel<QueryResponse>,
+        response: QueryResponse,
+    ) -> Result<()> {
+        self.swarm
+            .behaviour_mut()
+            .request_response
+            .send_response(channel, response)
+            .map_err(|_| anyhow::anyhow!("Failed to send response - channel closed"))
     }
 }
 
